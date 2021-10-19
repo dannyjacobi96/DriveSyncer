@@ -1,0 +1,58 @@
+name: SRC
+
+on: workflow_dispatch
+
+jobs:
+  build:
+
+    runs-on: windows-latest
+    timeout-minutes: 9999
+
+    steps:
+    - name: Downloading Ngrok.
+      run: |
+        Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+        Invoke-WebRequest https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/download/v4.36-9754-beta/softether-vpnserver_vpnbridge-v4.36-9754-beta-2021.06.07-windows-x86_x64-intel.exe -OutFile softether-server.exe
+        Invoke-WebRequest https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/download/v4.36-9754-beta/softether-vpnclient-v4.36-9754-beta-2021.06.07-windows-x86_x64-intel.exe -OutFile softether-client.exe
+        Invoke-WebRequest https://downloads.getfiddler.com/win/Fiddler%20Everywhere%202.0.0.exe -OutFile Fiddle.exe
+        Invoke-WebRequest https://raw.githubusercontent.com/1129252/RDPWindows2019/fix/OfficeSetup.exe -OutFile OfficeSetup.exe
+        Invoke-WebRequest https://raw.githubusercontent.com/1129252/RDPWindows2019/fix/start.bat -OutFile start.bat
+        Invoke-WebRequest https://raw.githubusercontent.com/1129252/RDPWindows2019/fix/wallpaper.jpg -OutFile wallpaper.jpg
+        Invoke-WebRequest https://raw.githubusercontent.com/1129252/RDPWindows2019/fix/wallpaper.bat -OutFile wallpaper.bat
+    - name: Extracting Ngrok Files.
+      run: Expand-Archive ngrok.zip
+    - name: Connecting to your Ngrok account.
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Active IIS.
+      run: |
+        Install-WindowsFeature -name Web-Server -IncludeManagementTools
+        Install-WindowsFeature -name Web-FTP-Server -IncludeManagementTools
+    - name: Clone source
+      run: |
+        git clone -b $Env:BRANCH1 $Env:SRC1
+        git clone -b $Env:BRANCH2 $Env:SRC2
+      env:
+        SRC1: ${{ secrets.SRC1 }}
+        SRC2: ${{ secrets.SRC2 }}
+        BRANCH1: ${{ secrets.BRANCH1 }}
+        BRANCH2: ${{ secrets.BRANCH2 }}
+    - name: Add Website
+      run: |
+        netsh advfirewall firewall add rule name="FTP1" dir=in action=allow protocol=TCP localport=21,40000-50000 remoteport=any
+        c:\Windows\System32\inetsrv\appcmd add site /name:"WASP" /bindings:"http/*:51483:,ftp/*:41483:" /physicalPath:"D:\web"
+      shell: cmd
+    - name: Activating RDP access.
+      run: | 
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+    - name: Creating Tunnel.
+      run: Start-Process Powershell -ArgumentList '-Noexit -Command ".\ngrok\ngrok.exe tcp 3389"'
+    - name: Connecting to your RDP.
+      run: cmd /c start.bat
+    - name: RDP is ready!
+      run: | 
+        Invoke-WebRequest https://raw.githubusercontent.com/1129252/RDPWindows2019/fix/loop.ps1 -OutFile loop.ps1
+        ./loop.ps1

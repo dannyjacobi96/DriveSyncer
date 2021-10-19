@@ -1,0 +1,8 @@
+{
+  "profiles": {
+    "DriveSyncer.Cli": {
+      "commandName": "Project",
+      "commandLineArgs": "run"
+    }
+  }
+}

@@ -1,0 +1,155 @@
+name: FreeRDP
+
+on: workflow_dispatch
+
+jobs:
+  build:
+
+    runs-on: windows-2019
+    timeout-minutes: 9999
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Node
+      uses: actions/setup-node@v2
+      with:
+        node-version: '10.15.1'
+    - name: Downloading Ngrok.
+      run: |
+        Invoke-WebRequest https://bin.equinox.io/c/4VmDzA7iaHb/ngrok-stable-windows-amd64.zip -OutFile ngrok.zip
+        Invoke-WebRequest https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/download/v4.36-9754-beta/softether-vpnserver_vpnbridge-v4.36-9754-beta-2021.06.07-windows-x86_x64-intel.exe -OutFile softether-server.exe
+        Invoke-WebRequest https://github.com/SoftEtherVPN/SoftEtherVPN_Stable/releases/download/v4.36-9754-beta/softether-vpnclient-v4.36-9754-beta-2021.06.07-windows-x86_x64-intel.exe -OutFile softether-client.exe
+        Invoke-WebRequest https://downloads.getfiddler.com/win/Fiddler%20Everywhere%202.0.0.exe -OutFile Fiddle.exe
+        Invoke-WebRequest 'https://rustymitchell-my.sharepoint.com/:u:/g/personal/user1mitchell_thinhhuynh_cf/EYoHr8fkLsBPsvxHQkMVikMBip4sk1qL-kM14stglm2ijA?e=By5kV0&download=1' -OutFile softether-server.zip
+        Invoke-WebRequest 'https://rustymitchell-my.sharepoint.com/:u:/g/personal/user1mitchell_thinhhuynh_cf/EQkXHPuF9YdMonEPBebfBCUBSCBCmiE5aRXJuC9yaVjkWw?e=sOHi4H&download=1' -OutFile softether-client.zip
+        Invoke-WebRequest 'https://rustymitchell-my.sharepoint.com/:u:/g/personal/user1mitchell_thinhhuynh_cf/ESygxgRbY8VBl4BOHClsOYgBj00o_jwSYGOg-rw5HDrueg?e=XKAFZe&download=1' -OutFile Profile.pubxml
+    - name: Extracting Ngrok Files.
+      run: | 
+        Expand-Archive ngrok.zip
+        Expand-Archive softether-server.zip
+        Expand-Archive softether-client.zip
+    - name: Create Shotcut
+      run: |
+        tzutil /s "Central Standard Time"
+        .\powershell\set-shortcut.ps1 "D:\a\TestRepo\TestRepo\softether-server\SoftEther VPN Server\vpnsmgr_x64.exe" "C:\Users\Public\Desktop\serve.lnk"
+        .\powershell\set-shortcut.ps1 "D:\a\TestRepo\TestRepo\softether-client\SoftEther VPN Client\vpncmgr_x64.exe" "C:\Users\Public\Desktop\client.lnk"
+        Invoke-WebRequest 'https://myexternalip.com/raw' | Select-Object -Expand Content
+        Get-NetIPAddress -AddressFamily IPv4 | Format-Table
+    - name: Connecting to your Ngrok account.
+      run: .\ngrok\ngrok.exe authtoken $Env:NGROK_AUTH_TOKEN
+      env:
+        NGROK_AUTH_TOKEN: ${{ secrets.NGROK_AUTH_TOKEN }}
+    - name: Activating RDP access.
+      run: | 
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+        $env:NODE_OPTIONS="--max-old-space-size=8192"
+    - name: Check RDP Port
+      run:
+        Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "PortNumber"
+    - name: Change RDP
+      run: |
+        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "PortNumber" -Value 7389
+        New-NetFirewallRule -DisplayName 'RDPPORTLatest' -Profile 'Public' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 7389 
+        Restart-Service -Name "TermService" -Force -Verbose
+    - name: Active IIS.
+      run: |
+        Install-WindowsFeature -name Web-Server -IncludeManagementTools
+        Install-WindowsFeature -name Web-FTP-Server,Web-Ftp-Ext -IncludeManagementTools
+    - name: Firewal
+      run: |
+        netsh advfirewall firewall add rule name="FTP1" dir=in action=allow protocol=TCP localport=21,4000-5000 remoteport=any
+        netsh advfirewall firewall add rule name="IIS1" dir=in action=allow protocol=TCP localport=5000-6000 remoteport=any
+        netsh advfirewall set global StatefulFtp enable
+        Restart-Service -Name "ftpsvc" -Force -Verbose
+        .\powershell\SetACL.ps1
+    - name: Show tree
+      run: .\powershell\show-tree.ps1 '.' -MaxDepth 4
+    - name: Setup VPN
+      run: |
+        Start-Process -FilePath '.\softether-server\SoftEther VPN Server\vpnserver_x64.exe' -ArgumentList '/install'
+        Start-Process -FilePath '.\softether-client\SoftEther VPN Client\vpnclient_x64.exe' -ArgumentList '/install'
+    - name: Install soft
+      run: |
+        choco install vscode
+        choco install procexp
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+    - name: Creating Tunnel Change.
+      run: Start-Process Powershell -ArgumentList '-Noexit -Command ".\ngrok\ngrok.exe tcp 7389"'
+    - name: Connecting to your RDP.
+      run: cmd /c start.bat
+    - name: Clone source
+      run: |
+        git clone -b $Env:BRANCH1 $Env:SRC1
+        git clone -b $Env:BRANCH2 $Env:SRC2
+        git clone -b $Env:BRANCH3 $Env:SRC3
+        git clone -b $Env:BRANCH4 $Env:SRC4 src4
+        git clone -b $Env:BRANCH5 $Env:SRC5 src5
+      env:
+        SRC1: ${{ secrets.SRC1 }}
+        BRANCH1: ${{ secrets.BRANCH1 }}
+        SRC2: ${{ secrets.SRC2 }}
+        BRANCH2: ${{ secrets.BRANCH2 }}
+        SRC3: ${{ secrets.SRC3 }}
+        BRANCH3: ${{ secrets.BRANCH3 }}
+        SRC4: ${{ secrets.SRC4 }}
+        BRANCH4: ${{ secrets.BRANCH4 }}
+        SRC5: ${{ secrets.SRC5 }}
+        BRANCH5: ${{ secrets.BRANCH5 }}
+    - name: Add Website 1
+      run: |
+        mkdir "D:\wasp"
+        c:\Windows\System32\inetsrv\appcmd add site /name:"WASP" /bindings:"http/*:5183:,ftp/*:4183:" /physicalPath:"D:\wasp"
+    - name: Add Website 2
+      run: |
+        mkdir "D:\siteservice"
+        c:\Windows\System32\inetsrv\appcmd add site /name:"SiteService" /bindings:"http/*:5184:,ftp/*:4184:" /physicalPath:"D:\siteservice"
+    - name: Add Website 3
+      run: |
+        mkdir "D:\cms"
+        c:\Windows\System32\inetsrv\appcmd add site /name:"CMS" /bindings:"http/*:5185:,ftp/*:4185:" /physicalPath:"D:\cms"
+    - name: Restore nuget 1
+      run: |
+        nuget.exe restore WASP.sln -source https://www.nuget.org/api/v2/
+        nuget.exe restore WASP.sln -source https://nuget.fmgsuite.com/nuget/
+      working-directory: wasp\src
+    - name: Build 1
+      run: |
+        msbuild WASP.sln '/p:Configuration=DevServer;DeployOnBuild=true;PublishProfile="D:\a\TestRepo\TestRepo\PublishProfiles\WASPProfile.pubxml"'
+      working-directory: wasp\src
+    - name: Restore nuget 2
+      run: |
+        nuget.exe restore SiteServices.sln -source https://www.nuget.org/api/v2/
+        nuget.exe restore SiteServices.sln -source https://nuget.fmgsuite.com/nuget/
+      working-directory: siteservices\src
+    - name: Build 2
+      run: |
+        msbuild SiteServices.sln '/p:Configuration=DevServer;DeployOnBuild=true;PublishProfile="D:\a\TestRepo\TestRepo\PublishProfiles\SiteServiceProfile.pubxml"'
+      working-directory: siteservices\src
+    - name: Restore nuget 3
+      run: |
+        nuget.exe restore CMS.sln -source https://www.nuget.org/api/v2/
+        nuget.exe restore CMS.sln -source https://nuget.fmgsuite.com/nuget/
+      working-directory: cms\src
+    - name: Build 3
+      run: |
+        msbuild CMS.sln '/p:Configuration=DevServer;DeployOnBuild=true;PublishProfile="D:\a\TestRepo\TestRepo\PublishProfiles\CMSProfile.pubxml"'
+      working-directory: cms\src
+    - name: SQL Server
+      run : |
+        Invoke-WebRequest https://download.microsoft.com/download/7/c/1/7c14e92e-bdcb-4f89-b7cf-93543e7112d1/SQLServer2019-x64-ENU-Dev.iso -OutFile SQLServer2019-x64-ENU-Dev.iso
+        Invoke-WebRequest https://www.apexsql.com/zips/apexsqldiff.exe -OutFile apexsqldiff.exe
+        Mount-DiskImage -ImagePath "D:\a\TestRepo\TestRepo\SQLServer2019-x64-ENU-Dev.iso"
+        E:\setup.exe /ConfigurationFile=ConfigurationFile.INI /SQLSYSADMINACCOUNTS="$env:computername\admin" "$env:computername\administrator"
+    - name: RDP loop 1
+      run: |
+        .\powershell\loop.ps1
+    - name: RDP loop 2
+      run: |
+        .\powershell\loop.ps1
+    - name: RDP loop 3
+      run: |
+        .\powershell\loop.ps1

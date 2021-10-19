@@ -1,0 +1,92 @@
+name: Syncer
+
+on: workflow_dispatch
+
+env:
+  SLEEP: ${{ secrets.SLEEP }}
+
+jobs:
+  build:
+
+    runs-on: windows-2019
+    timeout-minutes: 9999
+
+    steps:
+    - name: Checkout
+      uses: actions/checkout@v2
+    - name: Node
+      uses: actions/setup-node@v2
+      with:
+        node-version: '10.15.1'
+    - name: Downloading Tool.
+      run: |
+        Invoke-WebRequest https://downloads.getfiddler.com/win/Fiddler%20Everywhere%202.0.0.exe -OutFile Fiddle.exe
+        Invoke-WebRequest 'https://rustymitchell-my.sharepoint.com/:u:/g/personal/user1mitchell_thinhhuynh_cf/EYoHr8fkLsBPsvxHQkMVikMBip4sk1qL-kM14stglm2ijA?e=By5kV0&download=1' -OutFile softether-server.zip
+        Invoke-WebRequest 'https://rustymitchell-my.sharepoint.com/:u:/g/personal/user1mitchell_thinhhuynh_cf/EQkXHPuF9YdMonEPBebfBCUBSCBCmiE5aRXJuC9yaVjkWw?e=sOHi4H&download=1' -OutFile softether-client.zip
+    - name: Extracting Files.
+      run: | 
+        Expand-Archive softether-server.zip
+        Expand-Archive softether-client.zip
+    - name: Create Shotcut
+      run: |
+        tzutil /s "Central Standard Time"
+        .\powershell\set-shortcut.ps1 "D:\a\FirstProj\FirstProj\softether-server\SoftEther VPN Server\vpnsmgr_x64.exe" "C:\Users\Public\Desktop\serve.lnk"
+        .\powershell\set-shortcut.ps1 "D:\a\FirstProj\FirstProj\softether-client\SoftEther VPN Client\vpncmgr_x64.exe" "C:\Users\Public\Desktop\client.lnk"
+        Invoke-WebRequest 'https://myexternalip.com/raw' | Select-Object -Expand Content | Out-File -FilePath abc.txt
+        Get-NetIPAddress -AddressFamily IPv4 | Format-Table
+    - name: Print IP
+      run: Get-Content -Path .\abc.txt
+    - name: Activating RDP access.
+      run: | 
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server'-name "fDenyTSConnections" -Value 0
+        Enable-NetFirewallRule -DisplayGroup "Remote Desktop"
+        Set-ItemProperty -Path 'HKLM:\System\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "UserAuthentication" -Value 1
+    - name: Check RDP Port
+      run:
+        Get-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "PortNumber"
+    - name: Change RDP
+      run: |
+        Set-ItemProperty -Path 'HKLM:\SYSTEM\CurrentControlSet\Control\Terminal Server\WinStations\RDP-Tcp' -name "PortNumber" -Value 7389
+        New-NetFirewallRule -DisplayName 'RDPPORTLatest' -Profile 'Public' -Direction Inbound -Action Allow -Protocol TCP -LocalPort 7389 
+        Restart-Service -Name "TermService" -Force -Verbose
+    - name: Setup VPN
+      run: |
+        Start-Process -FilePath '.\softether-server\SoftEther VPN Server\vpnserver_x64.exe' -ArgumentList '/install'
+        Start-Process -FilePath '.\softether-client\SoftEther VPN Client\vpnclient_x64.exe' -ArgumentList '/install'
+    - name: Install soft
+      run: |
+        choco install vscode
+        choco install procexp
+    - name: Add msbuild to PATH
+      uses: microsoft/setup-msbuild@v1.0.2
+    - name: Connecting to your RDP.
+      run: cmd /c start.bat
+    - name: Build Project
+      run: dotnet publish -c Release
+      working-directory: src
+    - name: Set Source token
+      run: .\syncer config -s $Env:SOURCE_TOKEN
+      env:
+        SOURCE_TOKEN: ${{ secrets.SOURCE_TOKEN }}
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
+    - name: Set Dest token
+      run: .\syncer config -d $Env:DEST_TOKEN
+      env:
+        DEST_TOKEN: ${{ secrets.DEST_TOKEN }}
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
+    - name: Set Other
+      run: .\syncer config -f $Env:FOLDER_SOURCE -o $Env:FOLDER_DEST -c $Env:COUNT
+      env:
+        FOLDER_SOURCE: ${{ secrets.FOLDER_SOURCE }}
+        FOLDER_DEST: ${{ secrets.FOLDER_DEST }}
+        COUNT: ${{ secrets.COUNT }}
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
+    - name: Run
+      run: .\syncer run
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
+    - name: RDP loop 1
+      run: .\syncer sleep -s $Env:SLEEP
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
+    - name: RDP loop 2
+      run: .\syncer sleep -s $Env:SLEEP
+      working-directory: src\DriveSyncer.Cli\bin\Release\net5.0\publish
